@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-VERSION="1.0.3"
+VERSION="1.0.4"
 BUILD_DIR="$PROJECT_DIR/.build"
 DIST_DIR="$PROJECT_DIR/dist"
 APP_DIR="$DIST_DIR/MacErnet.app"

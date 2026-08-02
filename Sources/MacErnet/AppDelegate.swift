@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var speedMonitor = NetworkSpeedMonitor(provider: provider)
     private lazy var preferencesWindow = PreferencesWindowController()
     private let updateService = UpdateService()
+    private let wifiAutomation = WiFiAutomation(controller: SystemWiFiController())
 
     private var statusItem: NSStatusItem?
     private var connection: EthernetConnection?
@@ -32,7 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferencesWindow.onCheckForUpdates = { [weak self] in
             self?.updateService.checkForUpdates(userInitiated: true)
         }
+        preferencesWindow.onWiFiPreferenceChange = { [weak self] in
+            self?.applyWiFiAutomation(userInitiated: true)
+        }
 
+        ensureStatusItem()
         ethernetMonitor.start()
 
         if UserDefaults.standard.bool(forKey: AppPreferences.checkForUpdatesAutomatically) {
@@ -45,6 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         ethernetMonitor.stop()
         speedMonitor.stop()
+        try? wifiAutomation.restoreWiFiIfNeeded()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -55,15 +65,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyConnection(_ newConnection: EthernetConnection?) {
         let interfaceChanged = connection?.interfaceName != newConnection?.interfaceName
         connection = newConnection
+        applyWiFiAutomation(userInitiated: false)
 
         guard let newConnection else {
             speedMonitor.stop()
             speed = .zero
-            removeStatusItem()
+            statusItem?.isVisible = false
             return
         }
 
         ensureStatusItem()
+        statusItem?.isVisible = true
         updateStatusItemIcon()
         if interfaceChanged {
             updateSpeedMonitoring(for: newConnection)
@@ -74,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func ensureStatusItem() {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "MacErnetStatusItem"
+        item.isVisible = false
         if let button = item.button {
             button.toolTip = "MacErnet — Ethernet connected"
         }
@@ -88,12 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateStatusItemIcon() {
         statusItem?.button?.image = MenuBarIconLibrary.image(for: AppPreferences.selectedMenuBarIconStyle)
         statusItem?.button?.imagePosition = .imageOnly
-    }
-
-    private func removeStatusItem() {
-        guard let statusItem else { return }
-        NSStatusBar.system.removeStatusItem(statusItem)
-        self.statusItem = nil
     }
 
     private func rebuildMenu() {
@@ -143,6 +151,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard let activeConnection = explicitConnection ?? connection else { return }
         speedMonitor.start(interfaceName: activeConnection.interfaceName)
+    }
+
+    private func applyWiFiAutomation(userInitiated: Bool) {
+        do {
+            try wifiAutomation.apply(
+                ethernetConnected: connection != nil,
+                enabled: UserDefaults.standard.bool(forKey: AppPreferences.turnOffWiFiWithEthernet)
+            )
+        } catch where userInitiated {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Couldn’t Change Wi-Fi Power"
+            alert.runModal()
+        } catch {
+            // A missing or temporarily unavailable Wi-Fi interface should not affect Ethernet monitoring.
+        }
     }
 
     @objc private func openNetworkSettings() {

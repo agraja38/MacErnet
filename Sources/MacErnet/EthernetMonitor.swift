@@ -1,13 +1,45 @@
 import Foundation
 
+enum EthernetConnectionUpdate: Equatable {
+    case unchanged
+    case changed(EthernetConnection?)
+}
+
+struct EthernetConnectionDebouncer {
+    private let requiredMissingSamples: Int
+    private var lastConnection: EthernetConnection?
+    private var hasReported = false
+    private var missingSamples = 0
+
+    init(requiredMissingSamples: Int = 3) {
+        self.requiredMissingSamples = max(1, requiredMissingSamples)
+    }
+
+    mutating func receive(_ connection: EthernetConnection?, force: Bool = false) -> EthernetConnectionUpdate {
+        if let connection {
+            missingSamples = 0
+            guard force || !hasReported || connection != lastConnection else { return .unchanged }
+            hasReported = true
+            lastConnection = connection
+            return .changed(connection)
+        }
+
+        missingSamples += 1
+        guard missingSamples >= requiredMissingSamples else { return .unchanged }
+        guard !hasReported || lastConnection != nil else { return .unchanged }
+        hasReported = true
+        lastConnection = nil
+        return .changed(nil)
+    }
+}
+
 final class EthernetMonitor {
     typealias Handler = (EthernetConnection?) -> Void
 
     private let provider: EthernetProviding
     private let queue = DispatchQueue(label: "com.agraja.macernet.ethernet-monitor", qos: .utility)
     private var timer: DispatchSourceTimer?
-    private var lastConnection: EthernetConnection?
-    private var hasReported = false
+    private var debouncer = EthernetConnectionDebouncer()
 
     var onConnectionChange: Handler?
 
@@ -35,11 +67,9 @@ final class EthernetMonitor {
 
     private func poll(force: Bool = false) {
         let connection = provider.activeConnection()
-        guard force || !hasReported || connection != lastConnection else { return }
-        hasReported = true
-        lastConnection = connection
+        guard case let .changed(updatedConnection) = debouncer.receive(connection, force: force) else { return }
         DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(connection)
+            self?.onConnectionChange?(updatedConnection)
         }
     }
 }

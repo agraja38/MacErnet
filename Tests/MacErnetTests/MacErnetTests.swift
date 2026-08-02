@@ -2,6 +2,20 @@ import XCTest
 @testable import MacErnet
 
 final class MacErnetTests: XCTestCase {
+    private final class FakeWiFiController: WiFiControlling {
+        var isPoweredOn: Bool?
+        var powerChanges: [Bool] = []
+
+        init(isPoweredOn: Bool) {
+            self.isPoweredOn = isPoweredOn
+        }
+
+        func setPower(_ enabled: Bool) throws {
+            isPoweredOn = enabled
+            powerChanges.append(enabled)
+        }
+    }
+
     func testVersionComparisonUsesNumericOrdering() {
         XCTAssertTrue(VersionComparator.isNewer("1.0.10", than: "1.0.9"))
         XCTAssertTrue(VersionComparator.isNewer("2.0.0", than: "1.9.9"))
@@ -74,5 +88,46 @@ final class MacErnetTests: XCTestCase {
         XCTAssertFalse(fileManager.fileExists(atPath: targetApp.appendingPathExtension("previous").path))
         XCTAssertFalse(fileManager.fileExists(atPath: diskImageURL.path))
         try? fileManager.removeItem(at: root)
+    }
+
+    func testTransientMissingEthernetSamplesDoNotHideIcon() {
+        let ethernet = EthernetConnection(interfaceName: "en5", networkName: "LAN", adapterName: "Ethernet")
+        var debouncer = EthernetConnectionDebouncer(requiredMissingSamples: 3)
+
+        XCTAssertEqual(debouncer.receive(ethernet), .changed(ethernet))
+        XCTAssertEqual(debouncer.receive(nil), .unchanged)
+        XCTAssertEqual(debouncer.receive(nil), .unchanged)
+        XCTAssertEqual(debouncer.receive(ethernet), .unchanged)
+        XCTAssertEqual(debouncer.receive(nil), .unchanged)
+        XCTAssertEqual(debouncer.receive(nil), .unchanged)
+        XCTAssertEqual(debouncer.receive(nil), .changed(nil))
+    }
+
+    func testWiFiAutomationRestoresOnlyWiFiItDisabled() throws {
+        let suiteName = "MacErnetTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = FakeWiFiController(isPoweredOn: true)
+        let automation = WiFiAutomation(controller: controller, defaults: defaults)
+
+        try automation.apply(ethernetConnected: true, enabled: true)
+        XCTAssertEqual(controller.powerChanges, [false])
+        XCTAssertTrue(defaults.bool(forKey: AppPreferences.wifiDisabledByMacErnet))
+
+        try automation.apply(ethernetConnected: false, enabled: true)
+        XCTAssertEqual(controller.powerChanges, [false, true])
+        XCTAssertFalse(defaults.bool(forKey: AppPreferences.wifiDisabledByMacErnet))
+    }
+
+    func testWiFiAutomationLeavesPreexistingOffStateAlone() throws {
+        let suiteName = "MacErnetTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let controller = FakeWiFiController(isPoweredOn: false)
+        let automation = WiFiAutomation(controller: controller, defaults: defaults)
+
+        try automation.apply(ethernetConnected: true, enabled: true)
+        try automation.apply(ethernetConnected: false, enabled: true)
+        XCTAssertTrue(controller.powerChanges.isEmpty)
     }
 }

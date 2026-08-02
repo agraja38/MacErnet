@@ -24,13 +24,17 @@ enum AppPreferences {
     static let checkForUpdatesAutomatically = "checkForUpdatesAutomatically"
     static let launchAtLogin = "launchAtLogin"
     static let menuBarIconStyle = "menuBarIconStyle"
+    static let turnOffWiFiWithEthernet = "turnOffWiFiWithEthernet"
+    static let wifiDisabledByMacErnet = "wifiDisabledByMacErnet"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             showNetworkSpeed: true,
             checkForUpdatesAutomatically: true,
             launchAtLogin: false,
-            menuBarIconStyle: MenuBarIconStyle.macOSEthernet.rawValue
+            menuBarIconStyle: MenuBarIconStyle.macOSEthernet.rawValue,
+            turnOffWiFiWithEthernet: false,
+            wifiDisabledByMacErnet: false
         ])
     }
 

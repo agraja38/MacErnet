@@ -6,11 +6,13 @@ final class PreferencesWindowController: NSWindowController {
     private let speedCheckbox = NSButton(checkboxWithTitle: "Show network speed in the menu", target: nil, action: nil)
     private let updatesCheckbox = NSButton(checkboxWithTitle: "Automatically check for updates", target: nil, action: nil)
     private let loginCheckbox = NSButton(checkboxWithTitle: "Launch MacErnet at login", target: nil, action: nil)
+    private let wifiCheckbox = NSButton(checkboxWithTitle: "Turn off Wi-Fi while Ethernet is connected", target: nil, action: nil)
     private var iconButtons: [MenuBarIconStyle: NSButton] = [:]
 
     var onSpeedPreferenceChange: (() -> Void)?
     var onIconPreferenceChange: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
+    var onWiFiPreferenceChange: (() -> Void)?
 
     init() {
         let window = NSWindow(
@@ -61,6 +63,8 @@ final class PreferencesWindowController: NSWindowController {
         speedCheckbox.action = #selector(speedChanged)
         loginCheckbox.target = self
         loginCheckbox.action = #selector(loginChanged)
+        wifiCheckbox.target = self
+        wifiCheckbox.action = #selector(wifiChanged)
 
         let iconTitle = sectionTitle("Menu bar icon")
         let iconStack = NSStackView()
@@ -80,7 +84,7 @@ final class PreferencesWindowController: NSWindowController {
         note.textColor = .secondaryLabelColor
         note.font = .systemFont(ofSize: 11)
 
-        let stack = contentStack(views: [iconTitle, iconStack, separator(), speedCheckbox, loginCheckbox, note])
+        let stack = contentStack(views: [iconTitle, iconStack, separator(), speedCheckbox, wifiCheckbox, loginCheckbox, note])
         item.view = wrappedView(containing: stack)
         return item
     }
@@ -105,7 +109,7 @@ final class PreferencesWindowController: NSWindowController {
 
         let name = NSTextField(labelWithString: "MacErnet")
         name.font = .systemFont(ofSize: 24, weight: .bold)
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.4"
         let versionLabel = NSTextField(labelWithString: "Version \(version)")
         versionLabel.textColor = .secondaryLabelColor
         let credit = NSTextField(labelWithString: "Made by Agraja")
@@ -154,6 +158,7 @@ final class PreferencesWindowController: NSWindowController {
     private func syncFromDefaults() {
         speedCheckbox.state = UserDefaults.standard.bool(forKey: AppPreferences.showNetworkSpeed) ? .on : .off
         updatesCheckbox.state = UserDefaults.standard.bool(forKey: AppPreferences.checkForUpdatesAutomatically) ? .on : .off
+        wifiCheckbox.state = UserDefaults.standard.bool(forKey: AppPreferences.turnOffWiFiWithEthernet) ? .on : .off
         let selectedStyle = AppPreferences.selectedMenuBarIconStyle
         for (style, button) in iconButtons {
             button.state = style == selectedStyle ? .on : .off
@@ -179,6 +184,11 @@ final class PreferencesWindowController: NSWindowController {
 
     @objc private func updatesChanged() {
         UserDefaults.standard.set(updatesCheckbox.state == .on, forKey: AppPreferences.checkForUpdatesAutomatically)
+    }
+
+    @objc private func wifiChanged() {
+        UserDefaults.standard.set(wifiCheckbox.state == .on, forKey: AppPreferences.turnOffWiFiWithEthernet)
+        onWiFiPreferenceChange?()
     }
 
     @objc private func checkForUpdates() {
