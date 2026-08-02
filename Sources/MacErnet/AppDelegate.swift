@@ -26,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.updateSpeedMonitoring()
             self?.rebuildMenu()
         }
+        preferencesWindow.onIconPreferenceChange = { [weak self] in
+            self?.updateStatusItemIcon()
+        }
+        preferencesWindow.onCheckForUpdates = { [weak self] in
+            self?.updateService.checkForUpdates(userInitiated: true)
+        }
 
         ethernetMonitor.start()
 
@@ -58,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         ensureStatusItem()
+        updateStatusItemIcon()
         if interfaceChanged {
             updateSpeedMonitoring(for: newConnection)
         }
@@ -68,19 +75,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            button.image = NSImage(
-                systemSymbolName: "cable.connector.horizontal",
-                accessibilityDescription: "Ethernet connected"
-            )?.withSymbolConfiguration(configuration)
-            button.image?.isTemplate = true
             button.toolTip = "MacErnet — Ethernet connected"
         }
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
         statusItem = item
+        updateStatusItemIcon()
         rebuildMenu()
+    }
+
+    private func updateStatusItemIcon() {
+        statusItem?.button?.image = MenuBarIconLibrary.image(for: AppPreferences.selectedMenuBarIconStyle)
+        statusItem?.button?.imagePosition = .imageOnly
     }
 
     private func removeStatusItem() {
@@ -109,17 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-        let speedItem = actionItem(
-            title: "Show Network Speed",
-            action: #selector(toggleNetworkSpeed),
-            keyEquivalent: ""
-        )
-        speedItem.state = UserDefaults.standard.bool(forKey: AppPreferences.showNetworkSpeed) ? .on : .off
-        menu.addItem(speedItem)
         menu.addItem(actionItem(title: "Open Network Settings…", action: #selector(openNetworkSettings), keyEquivalent: ","))
         menu.addItem(actionItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: "s"))
-        menu.addItem(actionItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""))
-        menu.addItem(actionItem(title: "About MacErnet", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Quit MacErnet", action: #selector(quit), keyEquivalent: "q"))
     }
@@ -147,13 +145,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         speedMonitor.start(interfaceName: activeConnection.interfaceName)
     }
 
-    @objc private func toggleNetworkSpeed() {
-        let current = UserDefaults.standard.bool(forKey: AppPreferences.showNetworkSpeed)
-        UserDefaults.standard.set(!current, forKey: AppPreferences.showNetworkSpeed)
-        updateSpeedMonitoring()
-        rebuildMenu()
-    }
-
     @objc private func openNetworkSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension") else { return }
         NSWorkspace.shared.open(url)
@@ -161,24 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         preferencesWindow.show()
-    }
-
-    @objc private func checkForUpdates() {
-        updateService.checkForUpdates(userInitiated: true)
-    }
-
-    @objc private func showAbout() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        NSApplication.shared.orderFrontStandardAboutPanel(options: [
-            .applicationName: "MacErnet",
-            .applicationVersion: "Version \(version) (\(build))",
-            .credits: NSAttributedString(
-                string: "Made by Agraja",
-                attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]
-            )
-        ])
     }
 
     @objc private func quit() {

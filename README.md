@@ -2,7 +2,7 @@
 
 ## Features
 
-- Shows a native Ethernet icon in the macOS menu bar only while Ethernet is active, then hides it automatically when the connection becomes inactive.
+- Shows one of two user-selectable Ethernet icons in the macOS menu bar only while Ethernet is active, then hides it automatically when the connection becomes inactive.
 - Displays the connected network service name, adapter name, and BSD interface name when you open the menu.
 - Shows live download and upload speeds using macOS network-interface counters, with a setting to turn speed monitoring off.
 - Opens macOS Network Settings directly from the menu.
@@ -13,7 +13,7 @@
 
 ## Installation
 
-1. Download `MacErnet-1.0.0-universal.dmg` from the latest release.
+1. Download `MacErnet-1.0.1-universal.dmg` from the latest release.
 2. Open the disk image and drag **MacErnet** into **Applications**.
 3. Open **Applications**, Control-click **MacErnet**, and choose **Open** the first time.
 4. If macOS still blocks the unsigned app, open Terminal and run:

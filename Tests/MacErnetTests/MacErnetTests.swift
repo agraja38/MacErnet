@@ -24,4 +24,9 @@ final class MacErnetTests: XCTestCase {
             SpeedFormatter.string(bytesPerSecond: 0)
         )
     }
+
+    func testMenuBarOffersExactlyTwoIconStyles() {
+        XCTAssertEqual(MenuBarIconStyle.allCases.count, 2)
+        XCTAssertEqual(Set(MenuBarIconStyle.allCases.map(\.resourceName)), ["WiredNetwork", "MacOSEthernet"])
+    }
 }
