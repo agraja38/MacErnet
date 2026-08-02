@@ -2,12 +2,12 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-VERSION="1.0.1"
+VERSION="1.0.3"
 BUILD_DIR="$PROJECT_DIR/.build"
 DIST_DIR="$PROJECT_DIR/dist"
 APP_DIR="$DIST_DIR/MacErnet.app"
 CONTENTS_DIR="$APP_DIR/Contents"
-ICON_SOURCE="$PROJECT_DIR/Resources/MacErnet.svg"
+ICON_SOURCE="$PROJECT_DIR/Resources/MenuIcons/WiredNetwork.png"
 ICONSET_DIR="$BUILD_DIR/MacErnet.iconset"
 
 cd "$PROJECT_DIR"
@@ -20,11 +20,9 @@ cd "$PROJECT_DIR"
 /usr/bin/ditto "$PROJECT_DIR/Resources/MenuIcons" "$CONTENTS_DIR/Resources/MenuIcons"
 
 for size in 16 32 128 256 512; do
-  /usr/bin/qlmanage -t -s "$size" -o "$BUILD_DIR" "$ICON_SOURCE" >/dev/null 2>&1
-  /bin/mv "$BUILD_DIR/MacErnet.svg.png" "$ICONSET_DIR/icon_${size}x${size}.png"
+  /usr/bin/sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
   double_size=$((size * 2))
-  /usr/bin/qlmanage -t -s "$double_size" -o "$BUILD_DIR" "$ICON_SOURCE" >/dev/null 2>&1
-  /bin/mv "$BUILD_DIR/MacErnet.svg.png" "$ICONSET_DIR/icon_${size}x${size}@2x.png"
+  /usr/bin/sips -z "$double_size" "$double_size" "$ICON_SOURCE" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
 done
 /usr/bin/iconutil -c icns "$ICONSET_DIR" -o "$CONTENTS_DIR/Resources/MacErnet.icns"
 /usr/bin/codesign --force --deep --sign - "$APP_DIR"

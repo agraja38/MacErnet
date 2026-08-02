@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Darwin
 import Foundation
 
 struct UpdateManifest: Decodable {
@@ -9,6 +10,61 @@ struct UpdateManifest: Decodable {
     let arm64AssetURL: String
     let x86_64AssetURL: String
     let sha256: String?
+}
+
+enum UpdateInstallerScript {
+    static let contents = """
+    #!/bin/zsh
+    set -euo pipefail
+    SOURCE_APP="$1"
+    TARGET_APP="$2"
+    MOUNT_POINT="$3"
+    DISK_IMAGE="$4"
+    APP_PID="$5"
+    BACKUP_APP="${TARGET_APP}.previous"
+
+    /bin/sleep 0.5
+    if /bin/kill -0 "$APP_PID" 2>/dev/null; then
+      /bin/kill -TERM "$APP_PID" 2>/dev/null || true
+    fi
+    for attempt in {1..50}; do
+      if ! /bin/kill -0 "$APP_PID" 2>/dev/null; then break; fi
+      /bin/sleep 0.1
+    done
+    if /bin/kill -0 "$APP_PID" 2>/dev/null; then
+      /bin/kill -KILL "$APP_PID" 2>/dev/null || true
+    fi
+    for attempt in {1..20}; do
+      if ! /bin/kill -0 "$APP_PID" 2>/dev/null; then break; fi
+      /bin/sleep 0.1
+    done
+
+    /bin/rm -rf "$BACKUP_APP"
+    if [[ -e "$TARGET_APP" ]]; then /bin/mv "$TARGET_APP" "$BACKUP_APP"; fi
+    if /usr/bin/ditto "$SOURCE_APP" "$TARGET_APP"; then
+      /usr/bin/xattr -cr "$TARGET_APP" 2>/dev/null || true
+      if [[ "${MACERNET_UPDATE_TESTING:-0}" != "1" ]]; then
+        if ! /usr/bin/open "$TARGET_APP"; then
+          /bin/rm -rf "$TARGET_APP"
+          if [[ -e "$BACKUP_APP" ]]; then /bin/mv "$BACKUP_APP" "$TARGET_APP"; fi
+          /usr/bin/open "$TARGET_APP" 2>/dev/null || true
+          exit 1
+        fi
+      fi
+      /bin/rm -rf "$BACKUP_APP"
+    else
+      /bin/rm -rf "$TARGET_APP"
+      if [[ -e "$BACKUP_APP" ]]; then /bin/mv "$BACKUP_APP" "$TARGET_APP"; fi
+      if [[ "${MACERNET_UPDATE_TESTING:-0}" != "1" ]]; then
+        /usr/bin/open "$TARGET_APP" 2>/dev/null || true
+      fi
+      exit 1
+    fi
+    if [[ "${MACERNET_UPDATE_TESTING:-0}" != "1" ]]; then
+      /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet || true
+    fi
+    /bin/rm -f "$DISK_IMAGE" "$0"
+    """
 }
 
 @MainActor
@@ -34,6 +90,8 @@ final class UpdateService {
     private let session: URLSession
     private let manifestURL: URL
     private var isChecking = false
+    private var progressAlert: NSAlert?
+    private var progressHostWindow: NSWindow?
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -92,13 +150,7 @@ final class UpdateService {
     }
 
     private func downloadAndInstall(_ manifest: UpdateManifest) {
-        let progress = NSAlert()
-        progress.alertStyle = .informational
-        progress.messageText = "Downloading MacErnet \(manifest.version)…"
-        progress.informativeText = "The app will reopen when installation is complete."
-        progress.addButton(withTitle: "Cancel")
-        progress.buttons.first?.isEnabled = false
-        progress.beginSheetModal(for: NSApp.keyWindow ?? makeProgressWindow())
+        showProgress(for: manifest.version)
 
         Task {
             do {
@@ -114,9 +166,9 @@ final class UpdateService {
                 try verifyChecksum(of: diskImageURL, expected: manifest.sha256)
                 let mountPoint = try mountDiskImage(at: diskImageURL)
                 try launchInstaller(mountPoint: mountPoint, diskImageURL: diskImageURL)
-                NSApplication.shared.terminate(nil)
+                quitForUpdate()
             } catch {
-                progress.window.sheetParent?.endSheet(progress.window)
+                dismissProgress()
                 showError(title: "Couldn’t Install Update", error: error)
             }
         }
@@ -172,37 +224,13 @@ final class UpdateService {
             : URL(fileURLWithPath: "/Applications/MacErnet.app")
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("macernet-update-\(UUID().uuidString).sh")
-        let script = """
-        #!/bin/zsh
-        set -euo pipefail
-        SOURCE_APP="$1"
-        TARGET_APP="$2"
-        MOUNT_POINT="$3"
-        DISK_IMAGE="$4"
-        APP_PID="$5"
-        BACKUP_APP="${TARGET_APP}.previous"
-
-        while /bin/kill -0 "$APP_PID" 2>/dev/null; do /bin/sleep 0.2; done
-        /bin/rm -rf "$BACKUP_APP"
-        if [[ -e "$TARGET_APP" ]]; then /bin/mv "$TARGET_APP" "$BACKUP_APP"; fi
-        if /usr/bin/ditto "$SOURCE_APP" "$TARGET_APP"; then
-          /usr/bin/xattr -cr "$TARGET_APP" 2>/dev/null || true
-          /usr/bin/open "$TARGET_APP"
-          /bin/rm -rf "$BACKUP_APP"
-        else
-          /bin/rm -rf "$TARGET_APP"
-          if [[ -e "$BACKUP_APP" ]]; then /bin/mv "$BACKUP_APP" "$TARGET_APP"; fi
-          /usr/bin/open "$TARGET_APP" 2>/dev/null || true
-        fi
-        /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet || true
-        /bin/rm -f "$DISK_IMAGE" "$0"
-        """
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try UpdateInstallerScript.contents.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
 
         let installer = Process()
-        installer.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        installer.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
         installer.arguments = [
+            "/bin/zsh",
             scriptURL.path,
             sourceApp.path,
             targetApp.path,
@@ -210,15 +238,56 @@ final class UpdateService {
             diskImageURL.path,
             String(ProcessInfo.processInfo.processIdentifier)
         ]
+        installer.standardInput = FileHandle.nullDevice
         installer.standardOutput = FileHandle.nullDevice
         installer.standardError = FileHandle.nullDevice
         try installer.run()
     }
 
-    private func makeProgressWindow() -> NSWindow {
-        let window = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
-        window.orderFront(nil)
-        return window
+    private func showProgress(for version: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Downloading MacErnet \(version)…"
+        alert.informativeText = "The app will reopen when installation is complete."
+        alert.addButton(withTitle: "Please Wait")
+        alert.buttons.first?.isEnabled = false
+
+        let hostWindow: NSWindow
+        if let keyWindow = NSApp.keyWindow {
+            hostWindow = keyWindow
+        } else {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.alphaValue = 0
+            window.orderFront(nil)
+            progressHostWindow = window
+            hostWindow = window
+        }
+
+        progressAlert = alert
+        alert.beginSheetModal(for: hostWindow)
+    }
+
+    private func dismissProgress() {
+        if let window = progressAlert?.window, let parent = window.sheetParent {
+            parent.endSheet(window)
+        }
+        progressAlert = nil
+        progressHostWindow?.orderOut(nil)
+        progressHostWindow = nil
+    }
+
+    private func quitForUpdate() {
+        dismissProgress()
+
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2) {
+            _exit(EXIT_SUCCESS)
+        }
+        NSApplication.shared.terminate(nil)
     }
 
     private func showInformation(title: String, message: String) {

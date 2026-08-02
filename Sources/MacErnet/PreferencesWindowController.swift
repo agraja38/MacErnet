@@ -94,10 +94,7 @@ final class PreferencesWindowController: NSWindowController {
         let checkButton = NSButton(title: "Check for Updates…", target: self, action: #selector(checkForUpdates))
         checkButton.bezelStyle = .rounded
 
-        let description = NSTextField(wrappingLabelWithString: "MacErnet checks the public agraja38/app-update-feeds manifest and verifies downloaded updates before installation.")
-        description.textColor = .secondaryLabelColor
-
-        let stack = contentStack(views: [sectionTitle("Software Updates"), updatesCheckbox, checkButton, description])
+        let stack = contentStack(views: [sectionTitle("Software Updates"), updatesCheckbox, checkButton])
         item.view = wrappedView(containing: stack)
         return item
     }
@@ -108,9 +105,8 @@ final class PreferencesWindowController: NSWindowController {
 
         let name = NSTextField(labelWithString: "MacErnet")
         name.font = .systemFont(ofSize: 24, weight: .bold)
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "2"
-        let versionLabel = NSTextField(labelWithString: "Version \(version) (\(build))")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3"
+        let versionLabel = NSTextField(labelWithString: "Version \(version)")
         versionLabel.textColor = .secondaryLabelColor
         let credit = NSTextField(labelWithString: "Made by Agraja")
         credit.font = .systemFont(ofSize: 14, weight: .medium)

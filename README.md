@@ -13,7 +13,7 @@
 
 ## Installation
 
-1. Download `MacErnet-1.0.1-universal.dmg` from the latest release.
+1. Download `MacErnet-1.0.3-universal.dmg` from the latest release.
 2. Open the disk image and drag **MacErnet** into **Applications**.
 3. Open **Applications**, Control-click **MacErnet**, and choose **Open** the first time.
 4. If macOS still blocks the unsigned app, open Terminal and run:

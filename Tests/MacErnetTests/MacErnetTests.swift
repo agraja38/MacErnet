@@ -29,4 +29,50 @@ final class MacErnetTests: XCTestCase {
         XCTAssertEqual(MenuBarIconStyle.allCases.count, 2)
         XCTAssertEqual(Set(MenuBarIconStyle.allCases.map(\.resourceName)), ["WiredNetwork", "MacOSEthernet"])
     }
+
+    func testUpdateInstallerReplacesAppAndTerminatesOldProcess() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourceApp = root.appendingPathComponent("Source/MacErnet.app", isDirectory: true)
+        let targetApp = root.appendingPathComponent("Target/MacErnet.app", isDirectory: true)
+        let scriptURL = root.appendingPathComponent("update.sh")
+        let diskImageURL = root.appendingPathComponent("update.dmg")
+        try fileManager.createDirectory(at: sourceApp, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: targetApp, withIntermediateDirectories: true)
+        try "new".write(to: sourceApp.appendingPathComponent("version.txt"), atomically: true, encoding: .utf8)
+        try "old".write(to: targetApp.appendingPathComponent("version.txt"), atomically: true, encoding: .utf8)
+        try Data().write(to: diskImageURL)
+        try UpdateInstallerScript.contents.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
+
+        let oldProcess = Process()
+        oldProcess.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        oldProcess.arguments = ["60"]
+        try oldProcess.run()
+
+        let installer = Process()
+        installer.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        installer.arguments = [
+            scriptURL.path,
+            sourceApp.path,
+            targetApp.path,
+            root.path,
+            diskImageURL.path,
+            String(oldProcess.processIdentifier)
+        ]
+        installer.environment = ProcessInfo.processInfo.environment.merging(["MACERNET_UPDATE_TESTING": "1"]) { _, new in new }
+        try installer.run()
+        installer.waitUntilExit()
+        oldProcess.waitUntilExit()
+
+        XCTAssertEqual(installer.terminationStatus, 0)
+        XCTAssertFalse(oldProcess.isRunning)
+        XCTAssertEqual(
+            try String(contentsOf: targetApp.appendingPathComponent("version.txt"), encoding: .utf8),
+            "new"
+        )
+        XCTAssertFalse(fileManager.fileExists(atPath: targetApp.appendingPathExtension("previous").path))
+        XCTAssertFalse(fileManager.fileExists(atPath: diskImageURL.path))
+        try? fileManager.removeItem(at: root)
+    }
 }
