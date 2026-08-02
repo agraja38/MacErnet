@@ -1,0 +1,39 @@
+#!/bin/zsh
+set -euo pipefail
+
+PROJECT_DIR="${0:A:h:h}"
+VERSION="1.0.0"
+BUILD_DIR="$PROJECT_DIR/.build"
+DIST_DIR="$PROJECT_DIR/dist"
+APP_DIR="$DIST_DIR/MacErnet.app"
+CONTENTS_DIR="$APP_DIR/Contents"
+ICON_SOURCE="$PROJECT_DIR/Resources/MacErnet.svg"
+ICONSET_DIR="$BUILD_DIR/MacErnet.iconset"
+
+cd "$PROJECT_DIR"
+/usr/bin/swift build -c release --arch arm64 --arch x86_64
+
+/bin/rm -rf "$DIST_DIR" "$ICONSET_DIR"
+/bin/mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$ICONSET_DIR"
+/usr/bin/ditto "$BUILD_DIR/apple/Products/Release/MacErnet" "$CONTENTS_DIR/MacOS/MacErnet"
+/usr/bin/ditto "$PROJECT_DIR/Resources/Info.plist" "$CONTENTS_DIR/Info.plist"
+
+for size in 16 32 128 256 512; do
+  /usr/bin/qlmanage -t -s "$size" -o "$BUILD_DIR" "$ICON_SOURCE" >/dev/null 2>&1
+  /bin/mv "$BUILD_DIR/MacErnet.svg.png" "$ICONSET_DIR/icon_${size}x${size}.png"
+  double_size=$((size * 2))
+  /usr/bin/qlmanage -t -s "$double_size" -o "$BUILD_DIR" "$ICON_SOURCE" >/dev/null 2>&1
+  /bin/mv "$BUILD_DIR/MacErnet.svg.png" "$ICONSET_DIR/icon_${size}x${size}@2x.png"
+done
+/usr/bin/iconutil -c icns "$ICONSET_DIR" -o "$CONTENTS_DIR/Resources/MacErnet.icns"
+/usr/bin/codesign --force --deep --sign - "$APP_DIR"
+
+DMG_ROOT="$BUILD_DIR/dmg-root"
+/bin/rm -rf "$DMG_ROOT"
+/bin/mkdir -p "$DMG_ROOT"
+/usr/bin/ditto "$APP_DIR" "$DMG_ROOT/MacErnet.app"
+/bin/ln -s /Applications "$DMG_ROOT/Applications"
+/usr/bin/hdiutil create -volname "MacErnet $VERSION" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DIST_DIR/MacErnet-$VERSION-universal.dmg" >/dev/null
+/usr/bin/shasum -a 256 "$DIST_DIR/MacErnet-$VERSION-universal.dmg" > "$DIST_DIR/MacErnet-$VERSION-universal.dmg.sha256"
+
+echo "Built $DIST_DIR/MacErnet-$VERSION-universal.dmg"
