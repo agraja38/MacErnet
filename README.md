@@ -8,7 +8,6 @@
 - Opens macOS Network Settings directly from the menu.
 - Can launch automatically at login.
 - Checks for and installs updates in-app through the public `agraja38/app-update-feeds` feed.
-- Includes a native Settings window and an About page showing the app version and “Made by Agraja.”
 - Supports macOS 13 and later on Apple silicon and Intel Macs.
 - MacErnet will receive updates only until macOS 27 is released, because macOS 27 automatically changes the Wi-Fi icon to an Ethernet icon when Ethernet is connected.
 
